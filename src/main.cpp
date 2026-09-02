@@ -135,6 +135,7 @@ void serviceRadio()
          * scheduling bug to fix: the radio is half-duplex, so while it is
          * transmitting there is nothing to hear either way. */
         if (Radio::trySend(frame, len)) {
+            digitalWrite(LED_BUILTIN, HIGH); /* TEMP: latches on first TX attempt */
             g_tx_queue.pop();
         }
         return;
@@ -147,6 +148,7 @@ void serviceRadio()
     if (received < 0) {
         return;
     }
+    digitalWrite(LED_BUILTIN, HIGH); /* TEMP: latches on first successful air RX */
 
     /* R3: every inbound frame carries the link-stats header. Not conditional,
      * not configurable -- a bare frame and a stats-bearing one are
@@ -165,6 +167,9 @@ void serviceRadio()
 
 void setup()
 {
+    pinMode(LED_BUILTIN, OUTPUT); /* TEMP: RF diagnostic, see serviceRadio() */
+    digitalWrite(LED_BUILTIN, LOW);
+
     HostLink::begin();
     Debug::begin();
 
