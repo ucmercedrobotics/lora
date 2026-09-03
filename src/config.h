@@ -136,3 +136,15 @@
 #ifndef LORA_LED_FLASH_MS
 #define LORA_LED_FLASH_MS 30UL
 #endif
+
+/* ----------------------------------------------------------- diagnostics ---
+ * Injects a synthetic frame into the transmit queue every N ms, by the same
+ * path HostLink::drain() would push one. It exists so the transmit side can be
+ * exercised on a board whose host port is not reachable -- the diagnostic
+ * build moves that port to pins 13/14 -- which is the only way to watch the
+ * counters and transmit at the same time. 0 disables it, and it is 0 in every
+ * build that is not being debugged.
+ */
+#ifndef LORA_SELFTEST_MS
+#define LORA_SELFTEST_MS 0
+#endif

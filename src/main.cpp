@@ -47,6 +47,15 @@ uint32_t g_last_stats_ms = 0;
  * look identical from the debug port. */
 uint32_t g_air_rx = 0;
 
+/* Packets the radio accepted for transmission. Distinguishes "the host frame
+ * never reached the radio" from "the radio took it and nothing came out". */
+uint32_t g_air_tx = 0;
+
+#if LORA_SELFTEST_MS > 0
+uint32_t g_last_selftest_ms = 0;
+uint32_t g_selftest_seq = 0;
+#endif
+
 bool g_led_on = false;
 uint32_t g_led_off_at_ms = 0;
 
@@ -143,6 +152,8 @@ void reportStats()
     out.print(g_tx_queue.count());
     out.print(F(" tx_dropped="));
     out.print(g_tx_queue.dropped());
+    out.print(F(" air_tx="));
+    out.print(g_air_tx);
     out.print(F(" air_rx="));
     out.print(g_air_rx);
     out.print(F(" air_oversize="));
@@ -164,6 +175,7 @@ void serviceRadio()
          * scheduling bug to fix: the radio is half-duplex, so while it is
          * transmitting there is nothing to hear either way. */
         if (Radio::trySend(frame, len)) {
+            g_air_tx++;
             flashLed();
             g_tx_queue.pop();
         }
@@ -234,6 +246,18 @@ void loop()
 
     serviceRadio();
     serviceLed();
+
+#if LORA_SELFTEST_MS > 0
+    if (millis() - g_last_selftest_ms >= LORA_SELFTEST_MS) {
+        g_last_selftest_ms = millis();
+        uint8_t msg[24];
+        const int n = snprintf((char *)msg, sizeof(msg), "selftest #%lu",
+                               (unsigned long)++g_selftest_seq);
+        if (n > 0) {
+            g_tx_queue.push(msg, (uint8_t)n);
+        }
+    }
+#endif
 
 #if LORA_STATS_PERIOD_MS > 0
     const uint32_t now = millis();

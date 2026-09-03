@@ -12,13 +12,25 @@ namespace {
 
 /* True between handing a packet to the radio and confirming it has left.
  *
- * arduino-LoRa keeps isTransmitting() private, but beginPacket() returns 0
- * while the radio is on air, so it doubles as the query -- and when it does
- * succeed it has already put the radio in standby with the FIFO pointer reset,
- * which is exactly the state the next write wants. `g_primed` remembers that,
- * so the SPI work is never done twice. */
+ * arduino-LoRa keeps isTransmitting() private and beginPacket() returns 0 while
+ * the radio is on air, so it looks like a usable query. It is not one: on the
+ * branch where it decides the radio is idle it calls idle(), which drops the
+ * chip into standby and clears the payload length. Ask it mid-transmission and
+ * a stale answer does not merely mislead, it aborts the packet -- silently,
+ * after trySend() has already reported success.
+ *
+ * So the transmission is not probed while it is running. Its length is known
+ * before it starts, which is what airtime.h computes, and waiting out that
+ * interval costs nothing here because the loop never blocks either way. Once it
+ * has elapsed beginPacket() is safe, and it is still the thing that confirms
+ * the radio is idle -- by then its answer can only be the true one.
+ *
+ * When it does succeed it leaves the radio in standby with the FIFO pointer
+ * reset, which is exactly the state the next write wants; `g_primed` remembers
+ * that, so the SPI work is never done twice. */
 bool g_tx_pending = false;
 bool g_primed = false;
+uint32_t g_tx_done_at_ms = 0;
 
 uint32_t g_oversize_dropped = 0;
 
@@ -30,6 +42,20 @@ const RadioSettings g_settings = {
     true, /* arduino-LoRa transmits in explicit-header mode */
     true, /* R5, below */
 };
+
+/* Milliseconds this payload occupies the channel, rounded up, plus a margin
+ * for the standby-to-transmit ramp that the formula does not model. */
+uint32_t airtimeMs(uint8_t len)
+{
+    return (uint32_t)(airtimeSec(len, g_settings) * 1000.0f) + 2;
+}
+
+/* True while the packet handed over by the last trySend() is still going out.
+ * Deliberately a clock reading and not a register read: see above. */
+bool txStillOnAir()
+{
+    return g_tx_pending && (int32_t)(millis() - g_tx_done_at_ms) < 0;
+}
 
 /* True once the radio is idle and primed for a write. */
 bool claimRadio()
@@ -108,6 +134,9 @@ bool Radio::begin()
 bool Radio::trySend(const uint8_t *payload, uint8_t len)
 {
     if (g_tx_pending) {
+        if (txStillOnAir()) {
+            return false;
+        }
         if (LoRa.beginPacket() == 0) {
             return false; /* still on air */
         }
@@ -126,14 +155,18 @@ bool Radio::trySend(const uint8_t *payload, uint8_t len)
 
     g_primed = false;
     g_tx_pending = true;
+    g_tx_done_at_ms = millis() + airtimeMs(len);
     return true;
 }
 
 int Radio::tryReceive(uint8_t *out, uint8_t cap, int16_t *rssi, int8_t *snr_q)
 {
     if (g_tx_pending) {
-        if (LoRa.beginPacket() == 0) {
+        if (txStillOnAir()) {
             return -1; /* half-duplex: deaf until the transmission finishes */
+        }
+        if (LoRa.beginPacket() == 0) {
+            return -1;
         }
         g_tx_pending = false;
     }
