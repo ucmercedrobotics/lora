@@ -41,6 +41,12 @@ uint8_t g_rx_wire[FRAME_MAX_WIRE];
 
 uint32_t g_last_stats_ms = 0;
 
+/* Packets accepted off the air. The counter line reports every reason a frame
+ * was thrown away but had no count of the ones that arrived, which makes "the
+ * radio heard nothing" and "the radio heard it and the host link lost it"
+ * look identical from the debug port. */
+uint32_t g_air_rx = 0;
+
 bool g_led_on = false;
 uint32_t g_led_off_at_ms = 0;
 
@@ -137,6 +143,8 @@ void reportStats()
     out.print(g_tx_queue.count());
     out.print(F(" tx_dropped="));
     out.print(g_tx_queue.dropped());
+    out.print(F(" air_rx="));
+    out.print(g_air_rx);
     out.print(F(" air_oversize="));
     out.print(Radio::oversizeDropped());
     out.print(F(" host_tx_dropped="));
@@ -169,6 +177,7 @@ void serviceRadio()
     if (received < 0) {
         return;
     }
+    g_air_rx++;
     flashLed();
 
     /* R3: every inbound frame carries the link-stats header. Not conditional,
