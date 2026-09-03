@@ -127,3 +127,12 @@
 #ifndef LORA_STATS_PERIOD_MS
 #define LORA_STATS_PERIOD_MS 30000UL
 #endif
+
+/* -------------------------------------------------------------------- led ---
+ * LED_BUILTIN pulses on every host-to-air send and every air-to-host
+ * receive, long enough to see, short enough not to blur two events
+ * together.
+ */
+#ifndef LORA_LED_FLASH_MS
+#define LORA_LED_FLASH_MS 30UL
+#endif

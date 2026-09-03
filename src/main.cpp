@@ -41,6 +41,27 @@ uint8_t g_rx_wire[FRAME_MAX_WIRE];
 
 uint32_t g_last_stats_ms = 0;
 
+bool g_led_on = false;
+uint32_t g_led_off_at_ms = 0;
+
+/* Non-blocking pulse: turns LED_BUILTIN on now and lets serviceLed() turn it
+ * back off after LORA_LED_FLASH_MS, so a TX/RX event is visible without ever
+ * calling delay() (R7) or leaving the LED latched on. */
+void flashLed()
+{
+    digitalWrite(LED_BUILTIN, HIGH);
+    g_led_on = true;
+    g_led_off_at_ms = millis() + LORA_LED_FLASH_MS;
+}
+
+void serviceLed()
+{
+    if (g_led_on && (int32_t)(millis() - g_led_off_at_ms) >= 0) {
+        digitalWrite(LED_BUILTIN, LOW);
+        g_led_on = false;
+    }
+}
+
 void reportConfiguration()
 {
     Stream &out = Debug::out();
@@ -135,7 +156,7 @@ void serviceRadio()
          * scheduling bug to fix: the radio is half-duplex, so while it is
          * transmitting there is nothing to hear either way. */
         if (Radio::trySend(frame, len)) {
-            digitalWrite(LED_BUILTIN, HIGH); /* TEMP: latches on first TX attempt */
+            flashLed();
             g_tx_queue.pop();
         }
         return;
@@ -148,7 +169,7 @@ void serviceRadio()
     if (received < 0) {
         return;
     }
-    digitalWrite(LED_BUILTIN, HIGH); /* TEMP: latches on first successful air RX */
+    flashLed();
 
     /* R3: every inbound frame carries the link-stats header. Not conditional,
      * not configurable -- a bare frame and a stats-bearing one are
@@ -167,7 +188,7 @@ void serviceRadio()
 
 void setup()
 {
-    pinMode(LED_BUILTIN, OUTPUT); /* TEMP: RF diagnostic, see serviceRadio() */
+    pinMode(LED_BUILTIN, OUTPUT); /* TX/RX activity indicator, see flashLed() */
     digitalWrite(LED_BUILTIN, LOW);
 
     HostLink::begin();
@@ -203,6 +224,7 @@ void loop()
     HostLink::flush();
 
     serviceRadio();
+    serviceLed();
 
 #if LORA_STATS_PERIOD_MS > 0
     const uint32_t now = millis();
